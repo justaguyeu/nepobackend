@@ -6,7 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Highlight
 from .serializers import (
-    HighlightSerializer, UserProfileSerializer, UserRegisterSerializer,
+    ChangePasswordSerializer, HighlightSerializer, UserProfileSerializer, UserRegisterSerializer,
 )
 
 User = get_user_model()
@@ -45,6 +45,17 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             serializer.save()
             return Response(serializer.data)
         return Response(self.get_serializer(request.user, context={"request": request}).data)
+
+    @action(detail=False, methods=["post"], permission_classes=[permissions.IsAuthenticated])
+    def change_password(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        if not user.check_password(serializer.validated_data["old_password"]):
+            return Response({"old_password": ["Wrong password."]}, status=400)
+        user.set_password(serializer.validated_data["new_password"])
+        user.save()
+        return Response({"detail": "Password updated successfully."})
 
     @action(detail=True, methods=["get"])
     def followers(self, request, username=None):

@@ -21,6 +21,11 @@ class UserRegisterSerializer(serializers.ModelSerializer):
         return user
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=6)
+
+
 class UserSummarySerializer(serializers.ModelSerializer):
     """Compact user data — used inside posts, comments, follower lists, etc."""
 
