@@ -206,7 +206,7 @@ class ReelCommentViewSet(viewsets.ModelViewSet):
 
 class HashtagViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = HashtagSerializer
-    queryset = Hashtag.objects.all()
+    queryset = Hashtag.objects.annotate(post_count=Count("posts"))
     lookup_field = "name"
     pagination_class = IdOrderedCursorPagination
 
@@ -217,3 +217,9 @@ class HashtagViewSet(viewsets.ReadOnlyModelViewSet):
         page = self.paginate_queryset(qs)
         serializer = PostSerializer(page, many=True, context={"request": request})
         return self.get_paginated_response(serializer.data)
+
+    @action(detail=False, methods=["get"], pagination_class=None)
+    def trending(self, request):
+        """Top hashtags by post count — used for the frontend's Trending tab."""
+        qs = self.get_queryset().filter(post_count__gt=0).order_by("-post_count")[:30]
+        return Response(self.get_serializer(qs, many=True).data)

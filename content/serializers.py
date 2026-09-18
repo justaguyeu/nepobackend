@@ -15,9 +15,11 @@ class PostMediaSerializer(serializers.ModelSerializer):
 
 
 class HashtagSerializer(serializers.ModelSerializer):
+    post_count = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
         model = Hashtag
-        fields = ["id", "name"]
+        fields = ["id", "name", "post_count"]
 
 
 class CommentSerializer(serializers.ModelSerializer):

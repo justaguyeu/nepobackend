@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "django-insecure-change-me-in-prod")
 DEBUG = os.getenv("DJANGO_DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,nepowebapp.netlify.app,nepobackend.onrender.com").split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,nepobackend.onrender.com,nepowebapp.netlify.app").split(",")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -98,7 +98,10 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "uploads" / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -118,7 +121,7 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://nepowebapp.netlify.app,https://nepobackend.onrender.com"
+    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://nepobackend.onrender.com,https://nepowebapp.netlify.app"
 ).split(",")
 CORS_ALLOW_CREDENTIALS = True
 
