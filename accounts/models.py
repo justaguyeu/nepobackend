@@ -16,6 +16,9 @@ class User(AbstractUser):
     is_business = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Record of consent: when, and to which version of the Terms & Conditions.
+    terms_accepted_at = models.DateTimeField(null=True, blank=True)
+    terms_version = models.CharField(max_length=20, blank=True)
 
     @property
     def followers_count(self):

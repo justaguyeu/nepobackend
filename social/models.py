@@ -19,8 +19,9 @@ class Follow(models.Model):
         unique_together = ("follower", "following")
 
     def save(self, *args, **kwargs):
-        # Auto-pend if the target account is private and not already accepted
-        if self.following.is_private and self.status != self.ACCEPTED:
+        # A brand-new follow of a private account starts as a request. Only on
+        # creation: accepting a request re-saves it with status=ACCEPTED.
+        if self._state.adding and self.following.is_private:
             self.status = self.PENDING
         super().save(*args, **kwargs)
 

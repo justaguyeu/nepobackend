@@ -44,6 +44,35 @@ demo state — it flushes non-superuser data by default. Use
 `python manage.py seed_data --no-flush` to add to the existing data instead
 of wiping it first.
 
+## Deploying (Render)
+
+- **Build command:** `./build.sh` (installs requirements *and* runs
+  `python manage.py migrate`; without the migrate step new columns/tables
+  won't exist and requests will fail).
+- **Start command:** `gunicorn nepo.wsgi`
+- **Environment variables** (Render dashboard, not a committed `.env`):
+  `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`,
+  `CSRF_TRUSTED_ORIGINS`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+  `SUPABASE_MEDIA_BUCKET`. Leave `DJANGO_DEBUG` unset in production.
+  The app refuses to start without `DJANGO_SECRET_KEY` when DEBUG is off.
+
+## Security notes
+
+- Login tokens: 30-minute access tokens, 30-day refresh tokens that rotate on
+  every use and are revoked on logout (`POST /api/auth/logout/`). Changing the
+  password revokes every existing token.
+- Rate limits: login/register/password change 10/min per client, uploads
+  60/min per user (see `REST_FRAMEWORK` in `nepo/settings.py`).
+- Passwords go through Django's validators (length, common-password,
+  similarity, numeric-only).
+- Registration requires accepting the Terms & Conditions; the time and terms
+  version are stored on the user (`terms_accepted_at`, `terms_version`).
+  Bump `TERMS_VERSION` here and in `frontend/src/lib/terms.ts` together.
+- Private accounts: posts, reels, stories, comments and follower lists are
+  only visible to the owner and accepted followers.
+- Uploads: images (jpg/png/gif/webp, 10 MB, verified with Pillow) and videos
+  (mp4/mov/webm/m4v, 100 MB); the stored content type is chosen by the server.
+
 ## Environment variables
 
 See `.env.example` for the full list. At minimum for local development you

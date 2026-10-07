@@ -1,7 +1,10 @@
+from urllib.parse import urlparse
+
 from django.utils import timezone
 from rest_framework import serializers
 
 from accounts.serializers import UserSummarySerializer
+from social.visibility import can_view
 from .models import (
     Comment, Hashtag, Like, Post, PostMedia, Reel, ReelComment,
     SavedPost, Story, StorySticker, StoryView,
@@ -22,20 +25,56 @@ class HashtagSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "post_count"]
 
 
+def _requester(serializer):
+    request = serializer.context.get("request")
+    return request.user if request else None
+
+
+def _is_liked_by_requester(serializer, obj):
+    request = serializer.context.get("request")
+    if not request or not request.user.is_authenticated:
+        return False
+    return obj.likes.filter(user=request.user).exists()
+
+
 class CommentSerializer(serializers.ModelSerializer):
     author = UserSummarySerializer(read_only=True)
     like_count = serializers.ReadOnlyField()
+    is_liked = serializers.SerializerMethodField()
     replies = serializers.SerializerMethodField()
 
     class Meta:
         model = Comment
-        fields = ["id", "post", "author", "parent", "text", "like_count", "replies", "created_at"]
+        fields = ["id", "post", "author", "parent", "text", "like_count", "is_liked", "replies", "created_at"]
         read_only_fields = ["author"]
+
+    def get_is_liked(self, obj):
+        return _is_liked_by_requester(self, obj)
 
     def get_replies(self, obj):
         if obj.parent_id is not None:
             return []  # only nest one level deep in the default payload
         return CommentSerializer(obj.replies.all(), many=True, context=self.context).data
+
+    def validate(self, attrs):
+        if self.instance is not None:
+            # Editing changes the text only; a comment can't be moved to another post/thread.
+            attrs.pop("post", None)
+            attrs.pop("parent", None)
+            return attrs
+        post = attrs["post"]
+        if not can_view(_requester(self), post.author):
+            raise serializers.ValidationError({"post": "Post not found."})
+        if post.comments_disabled:
+            raise serializers.ValidationError("Comments are turned off for this post.")
+        parent = attrs.get("parent")
+        if parent is not None:
+            if parent.post_id != post.id:
+                raise serializers.ValidationError({"parent": "Reply must be on the same post."})
+            # Threads are one level deep: replying to a reply joins the top-level thread.
+            if parent.parent_id is not None:
+                attrs["parent"] = parent.parent
+        return attrs
 
 
 class PostSerializer(serializers.ModelSerializer):
@@ -60,10 +99,7 @@ class PostSerializer(serializers.ModelSerializer):
         ]
 
     def get_is_liked(self, obj):
-        request = self.context.get("request")
-        if not request or not request.user.is_authenticated:
-            return False
-        return obj.likes.filter(user=request.user).exists()
+        return _is_liked_by_requester(self, obj)
 
     def get_is_saved(self, obj):
         request = self.context.get("request")
@@ -71,16 +107,26 @@ class PostSerializer(serializers.ModelSerializer):
             return False
         return obj.saved_by.filter(user=request.user).exists()
 
+    def update(self, instance, validated_data):
+        # Media and hashtags are fixed at creation; edits change caption/settings only.
+        validated_data.pop("media_urls", None)
+        validated_data.pop("hashtag_names", None)
+        return super().update(instance, validated_data)
+
     def create(self, validated_data):
         media_urls = validated_data.pop("media_urls", [])
         hashtag_names = validated_data.pop("hashtag_names", [])
         post = Post.objects.create(**validated_data)
         for i, url in enumerate(media_urls):
-            media_type = "video" if url.lower().endswith((".mp4", ".mov", ".webm")) else "image"
+            # Look at the path only: storage URLs can carry a query string (or a bare trailing "?").
+            path = urlparse(url).path.lower()
+            media_type = "video" if path.endswith((".mp4", ".mov", ".webm", ".m4v")) else "image"
             PostMedia.objects.create(post=post, file_url=url, order=i, media_type=media_type)
         for name in hashtag_names:
-            tag, _ = Hashtag.objects.get_or_create(name=name.lstrip("#").lower())
-            post.hashtags.add(tag)
+            name = name.lstrip("#").lower()
+            if name:
+                tag, _ = Hashtag.objects.get_or_create(name=name)
+                post.hashtags.add(tag)
         return post
 
 
@@ -134,26 +180,40 @@ class ReelCommentSerializer(serializers.ModelSerializer):
         fields = ["id", "reel", "author", "text", "created_at"]
         read_only_fields = ["author"]
 
+    def validate(self, attrs):
+        if self.instance is not None:
+            attrs.pop("reel", None)
+            return attrs
+        if not can_view(_requester(self), attrs["reel"].author):
+            raise serializers.ValidationError({"reel": "Reel not found."})
+        return attrs
+
 
 class ReelSerializer(serializers.ModelSerializer):
     author = UserSummarySerializer(read_only=True)
     like_count = serializers.ReadOnlyField()
     comment_count = serializers.ReadOnlyField()
     is_liked = serializers.SerializerMethodField()
+    is_following_author = serializers.SerializerMethodField()
 
     class Meta:
         model = Reel
         fields = [
             "id", "author", "video_url", "thumbnail_url", "caption",
             "audio_title", "audio_url", "effect_tags", "view_count",
-            "share_count", "like_count", "comment_count", "is_liked", "created_at",
+            "share_count", "like_count", "comment_count", "is_liked",
+            "is_following_author", "created_at",
         ]
+        read_only_fields = ["view_count", "share_count"]
 
     def get_is_liked(self, obj):
+        return _is_liked_by_requester(self, obj)
+
+    def get_is_following_author(self, obj):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
-        return obj.likes.filter(user=request.user).exists()
+        return obj.author.followers.filter(follower=request.user, status="accepted").exists()
 
 
 class SavedPostSerializer(serializers.ModelSerializer):
