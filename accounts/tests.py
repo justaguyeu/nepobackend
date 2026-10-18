@@ -160,3 +160,25 @@ class PrivateAccountTests(APITestCase):
     def test_anonymous_cannot_see_private_posts(self):
         self.client.force_authenticate(None)
         self.assertEqual(self.client.get(f"/api/posts/{self.post.id}/").status_code, 404)
+
+
+class CorsTests(APITestCase):
+    """Browsers send a preflight first; without the allow header they block the real request."""
+
+    def preflight(self, origin):
+        return self.client.options(
+            "/api/auth/login/",
+            HTTP_ORIGIN=origin,
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="content-type",
+        )
+
+    def test_flutter_web_dev_server_on_any_port_is_allowed(self):
+        for origin in ["http://localhost:60675", "http://127.0.0.1:5173", "http://localhost:3000"]:
+            res = self.preflight(origin)
+            self.assertEqual(res.headers.get("access-control-allow-origin"), origin, origin)
+
+    def test_unknown_sites_are_not_allowed(self):
+        for origin in ["https://evil.example", "http://localhost.evil.example:8000"]:
+            res = self.preflight(origin)
+            self.assertNotIn("access-control-allow-origin", res.headers, origin)

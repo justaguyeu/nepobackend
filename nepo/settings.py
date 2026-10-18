@@ -164,6 +164,12 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000,https://nepowebapp.netlify.app"
 )
+# Local dev servers on any port: `flutter run -d chrome` picks a new random port
+# every run, so an exact-origin list can't cover it. Safe with the setting
+# below — auth is a bearer header, never a cookie the browser attaches itself.
+CORS_ALLOWED_ORIGIN_REGEXES = env_list(
+    "CORS_ALLOWED_ORIGIN_REGEXES", r"^http://localhost:\d+$,^http://127\.0\.0\.1:\d+$"
+)
 # Auth uses an Authorization header, not cookies, so cross-site credentials are never needed.
 CORS_ALLOW_CREDENTIALS = False
 
