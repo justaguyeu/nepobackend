@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.conf import settings
@@ -10,6 +11,10 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
+
+from . import storage
+
+logger = logging.getLogger(__name__)
 
 # The folder becomes part of the storage path, so only accept known values.
 ALLOWED_FOLDERS = {"posts", "reels", "stories", "avatars", "messages", "highlights"}
@@ -76,17 +81,20 @@ def upload_media(request: Request):
     storage_path = f"{folder}/{request.user.id}/{uuid.uuid4()}.{ext}"
 
     # ── Supabase path ────────────────────────────────────────────────────────
-    if settings.SUPABASE_URL and settings.SUPABASE_SERVICE_KEY:
-        try:
-            from supabase import create_client
-            supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
-            supabase.storage.from_(settings.SUPABASE_MEDIA_BUCKET).upload(
-                storage_path, data, {"content-type": content_type}
+    if storage.is_configured():
+        if not storage.has_server_key():
+            logger.error(storage.KEY_HELP)
+            return Response(
+                {"detail": "Media storage isn't set up correctly on the server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-            public_url = supabase.storage.from_(settings.SUPABASE_MEDIA_BUCKET).get_public_url(storage_path)
+        try:
+            public_url = storage.upload(storage_path, data, content_type)
             return Response({"url": public_url, "path": storage_path})
-        except Exception:
-            # Don't echo storage internals (bucket names, keys in URLs) back to the client.
+        except storage.StorageError:
+            # Log Supabase's reason for us, but don't echo storage internals
+            # (bucket names, keys in URLs) back to the client.
+            logger.exception("Upload of %s to Supabase failed", storage_path)
             return Response({"detail": "Upload to storage failed. Please try again."}, status=status.HTTP_502_BAD_GATEWAY)
 
     # ── Local fallback (dev) ─────────────────────────────────────────────────

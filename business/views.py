@@ -1,3 +1,4 @@
+from django.db.models import Case, When
 from rest_framework import permissions, viewsets
 from rest_framework.exceptions import ValidationError
 
@@ -12,9 +13,10 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
 
 
 class BusinessCategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = BusinessCategory.objects.all()
+    # A short, fixed list that pickers show in full: alphabetical, "Other" last, unpaginated.
+    queryset = BusinessCategory.objects.order_by(Case(When(name="Other", then=1), default=0), "name")
     serializer_class = BusinessCategorySerializer
-    pagination_class = IdOrderedCursorPagination
+    pagination_class = None
 
 
 class BusinessProfileViewSet(viewsets.ModelViewSet):
