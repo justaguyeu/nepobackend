@@ -83,25 +83,18 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "nepo.wsgi.application"
 
-# DATABASES = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
-
-DATABASES ={
-    'default': dj_database_url.parse('postgresql://nepodatabase_user:IEnElFma3Ww9Iuh0QnHekb0sCI7fH67d@dpg-dbator6q1p3s73d2vhbg-a.oregon-postgres.render.com/nepodatabase')
-}
-# For production, point this at Supabase Postgres instead, e.g.:
-# DATABASES["default"] = {
-#     "ENGINE": "django.db.backends.postgresql",
-#     "NAME": os.getenv("SUPABASE_DB_NAME", "postgres"),
-#     "USER": os.getenv("SUPABASE_DB_USER"),
-#     "PASSWORD": os.getenv("SUPABASE_DB_PASSWORD"),
-#     "HOST": os.getenv("SUPABASE_DB_HOST"),
-#     "PORT": os.getenv("SUPABASE_DB_PORT", "5432"),
-# }
+# Database: from the DATABASE_URL environment variable (on Render, the
+# database's "Internal Database URL"). Never write the URL into this file —
+# it contains the password and this repository is public.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if DATABASE_URL:
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)}
+elif DEBUG:
+    # Local development without a DATABASE_URL: a SQLite file next to manage.py.
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+else:
+    # Fail loudly rather than silently serving production from a throwaway SQLite file.
+    raise ImproperlyConfigured("Set DATABASE_URL (e.g. Render's Internal Database URL) in the environment.")
 
 AUTH_USER_MODEL = "accounts.User"
 
