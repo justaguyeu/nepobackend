@@ -6,6 +6,7 @@ your Supabase bucket, uploaded directly from the Next.js frontend using
 the Supabase JS client + signed policies, or via the /api/uploads/ helper
 which proxies to the Supabase Storage REST API using SUPABASE_SERVICE_KEY.
 """
+import dj_database_url
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -82,11 +83,15 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "nepo.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": BASE_DIR / "db.sqlite3",
+#     }
+# }
+
+DATABASES ={
+    'default': dj_database_url.parse('postgresql://nepodatabase_user:IEnElFma3Ww9Iuh0QnHekb0sCI7fH67d@dpg-dbator6q1p3s73d2vhbg-a.oregon-postgres.render.com/nepodatabase')
 }
 # For production, point this at Supabase Postgres instead, e.g.:
 # DATABASES["default"] = {
