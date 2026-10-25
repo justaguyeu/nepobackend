@@ -30,19 +30,32 @@ The API is now at `http://localhost:8000/api/`, and the admin site at
 
 ## Demo data
 
-`python manage.py seed_data` populates the database with a realistic demo
-network: ~35 users (mix of personal and business accounts), business
-profiles with categories/hours/contact info, posts with images and videos,
-hashtags, comments, likes, stories, reels, saved posts, notifications, and
-DM conversations. This means a brand new person who registers on the
-frontend immediately has people to follow and content to see, instead of
-landing in an empty app.
+`python manage.py seed_data` **deletes every non-superuser account** (and
+everything they posted), then fills the database with a Tanzanian demo
+community: 100 accounts (74 businesses across the real business categories,
+26 customers) with African profile photos, business profiles with
+hours/contact info, photo and video posts, reels, stories with polls,
+highlights, comments with replies, likes, saves, follows and follow
+requests, notifications, and chats. A brand new person who registers
+immediately has businesses to follow and content to see.
 
 Every seeded account's password is **`password123`** (e.g. username
-`amanimrema`). Run the command again any time to reset back to a clean
-demo state — it flushes non-superuser data by default. Use
-`python manage.py seed_data --no-flush` to add to the existing data instead
-of wiping it first.
+`mama_doreen_kitchen` or `furahamushi`). Run the command again any time to
+reset to a clean demo state.
+
+Media: photos are hotlinked from Unsplash (free Unsplash License); the short
+videos ship in `accounts/seed/clips/` (from Pexels, free license) and are
+uploaded once to the Supabase bucket's `seed/` folder. Without Supabase
+settings, they go to local media storage (DEBUG only).
+
+To seed the production database from your own machine, with the Supabase
+values in `backend/.env` (PowerShell):
+
+```powershell
+$env:DATABASE_URL="<Render database -> External Database URL>"
+python manage.py seed_data
+Remove-Item Env:DATABASE_URL
+```
 
 ## Deploying (Render)
 
@@ -87,8 +100,8 @@ blank locally (media uploads just won't work until they're set).
 - Point `DATABASES` at Postgres (Supabase or otherwise) instead of SQLite —
   see the commented-out block in `nepo/settings.py`.
 - Fill in the real `SUPABASE_*` values so uploads work.
-- Re-run `seed_data` only if you actually want demo accounts in production;
-  otherwise skip it and let real users register.
+- Run `seed_data` against production only if you want demo accounts there:
+  it deletes every non-superuser account first.
 
 ## Apps
 

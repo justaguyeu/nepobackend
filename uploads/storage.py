@@ -84,13 +84,25 @@ def _request(method, path, **kwargs):
     return res
 
 
+def public_url(path):
+    return _object_url(path, public=True)
+
+
+def exists(path):
+    """True if path is already in the (public) media bucket."""
+    try:
+        return httpx.head(public_url(path), timeout=TIMEOUT).status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
 def upload(path, data, content_type):
     """Stores data at path in the media bucket and returns its public URL."""
     _request(
         "POST", path, content=data,
         headers={**_headers(), "Content-Type": content_type, "Cache-Control": "max-age=3600", "x-upsert": "false"},
     )
-    return _object_url(path, public=True)
+    return public_url(path)
 
 
 def delete(path):
