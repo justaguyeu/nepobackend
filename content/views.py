@@ -1,4 +1,4 @@
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Prefetch, Q
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
@@ -8,7 +8,7 @@ from nepo.pagination import (
     DefaultCursorPagination, IdOrderedCursorPagination, OldestFirstCursorPagination, RankedPagination,
 )
 from social.models import Follow, Notification
-from social.visibility import visible_q
+from social.visibility import not_blocked_q, visible_q
 from .models import Comment, Hashtag, Like, Post, Reel, ReelComment, SavedPost, Story, StoryView
 from .serializers import (
     CommentSerializer, HashtagSerializer, PostSerializer, ReelCommentSerializer,
@@ -112,9 +112,12 @@ class CommentViewSet(viewsets.ModelViewSet):
     owner_attr = "post"
 
     def get_queryset(self):
+        user = self.request.user
+        # Comments (and replies) by accounts in a block with the viewer are hidden, whoever's post it is.
+        replies = Comment.objects.filter(not_blocked_q(user)).select_related("author")
         qs = (
-            Comment.objects.select_related("author", "post__author").prefetch_related("replies__author")
-            .filter(visible_q(self.request.user, "post__author"))
+            Comment.objects.select_related("author", "post__author").prefetch_related(Prefetch("replies", replies))
+            .filter(visible_q(user, "post__author") & not_blocked_q(user))
         )
         if self.action == "list":
             # Replies are nested inside their parent; detail actions (like,
@@ -241,8 +244,9 @@ class ReelCommentViewSet(viewsets.ModelViewSet):
     owner_attr = "reel"
 
     def get_queryset(self):
+        user = self.request.user
         qs = ReelComment.objects.select_related("author", "reel__author").filter(
-            visible_q(self.request.user, "reel__author")
+            visible_q(user, "reel__author") & not_blocked_q(user)
         )
         reel_id = self.request.query_params.get("reel")
         if reel_id:

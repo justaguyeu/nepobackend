@@ -105,3 +105,87 @@ class ConversationValidationTests(APITestCase):
         convo.participants.set([self.alice, bob])
         res = self.client.post(f"/api/conversations/{convo.id}/messages/", {"kind": "text", "text": "   "}, format="json")
         self.assertEqual(res.status_code, 400)
+
+
+class BlockTests(APITestCase):
+    def setUp(self):
+        from content.models import Comment, Post
+        self.alice = User.objects.create_user(username="alice", password="pw123456")
+        self.bob = User.objects.create_user(username="bob", password="pw123456")
+        self.carol = User.objects.create_user(username="carol", password="pw123456")
+        Follow.objects.create(follower=self.alice, following=self.bob)
+        Follow.objects.create(follower=self.bob, following=self.alice)
+        self.bobs_post = Post.objects.create(author=self.bob, caption="bob's post")
+        self.carols_post = Post.objects.create(author=self.carol, caption="carol's post")
+        Comment.objects.create(post=self.carols_post, author=self.bob, text="bob was here")
+        self.client.force_authenticate(self.alice)
+
+    def block_bob(self):
+        res = self.client.post("/api/users/bob/block/")
+        self.assertEqual(res.data, {"blocked": True})
+
+    def test_block_ends_follows_and_hides_content_both_ways(self):
+        self.block_bob()
+        self.assertFalse(Follow.objects.filter(follower__in=[self.alice, self.bob], following__in=[self.alice, self.bob]).exists())
+        self.assertEqual(self.client.get("/api/posts/?username=bob").data["results"], [])
+        comments = self.client.get(f"/api/comments/?post={self.carols_post.id}").data["results"]
+        self.assertEqual(comments, [])
+        self.assertTrue(self.client.get("/api/users/bob/").data["is_blocked"])
+        # Bob no longer finds Alice at all.
+        self.client.force_authenticate(self.bob)
+        self.assertEqual(self.client.get("/api/users/alice/").status_code, 404)
+        self.assertEqual(self.client.post("/api/follow/", {"target_username": "alice"}, format="json").status_code, 403)
+
+    def test_blocked_people_cant_follow_or_message(self):
+        convo = Conversation.objects.create()
+        convo.participants.set([self.alice, self.bob])
+        self.block_bob()
+        self.assertEqual(self.client.post("/api/follow/", {"target_username": "bob"}, format="json").status_code, 403)
+        res = self.client.post(f"/api/conversations/{convo.id}/messages/", {"text": "hi"}, format="json")
+        self.assertEqual(res.status_code, 403)
+        res = self.client.post("/api/conversations/", {"participant_ids": [str(self.bob.id)]}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_unblock_and_blocked_list(self):
+        self.block_bob()
+        self.assertEqual([u["username"] for u in self.client.get("/api/users/me/blocked/").data], ["bob"])
+        self.assertEqual(self.client.delete("/api/users/bob/block/").data, {"blocked": False})
+        self.assertEqual(self.client.get("/api/users/me/blocked/").data, [])
+        self.assertEqual(len(self.client.get("/api/posts/?username=bob").data["results"]), 1)
+
+    def test_cannot_block_self(self):
+        self.assertEqual(self.client.post("/api/users/alice/block/").status_code, 400)
+
+
+class ReportTests(APITestCase):
+    def setUp(self):
+        from content.models import Post
+        self.alice = User.objects.create_user(username="alice", password="pw123456")
+        self.bob = User.objects.create_user(username="bob", password="pw123456")
+        self.secret = User.objects.create_user(username="secret", password="pw123456", is_private=True)
+        self.post = Post.objects.create(author=self.bob, caption="buy followers here")
+        self.hidden = Post.objects.create(author=self.secret, caption="private")
+        self.client.force_authenticate(self.alice)
+
+    def report(self, **body):
+        return self.client.post("/api/reports/", {"reason": "spam", **body}, format="json")
+
+    def test_report_post_and_account(self):
+        from .models import Report
+        self.assertEqual(self.report(target_type="post", target_id=str(self.post.id)).status_code, 201)
+        self.assertEqual(self.report(target_type="user", target_id="bob", details="fake shop").status_code, 201)
+        reports = Report.objects.order_by("created_at")
+        self.assertEqual([(r.reported_user, r.post) for r in reports], [(self.bob, self.post), (self.bob, None)])
+        # Reporting the same thing again doesn't pile up duplicates.
+        self.report(target_type="post", target_id=str(self.post.id))
+        self.assertEqual(Report.objects.count(), 2)
+
+    def test_cannot_report_what_you_cant_see_or_yourself(self):
+        self.assertEqual(self.report(target_type="post", target_id=str(self.hidden.id)).status_code, 400)
+        self.assertEqual(self.report(target_type="post", target_id="not-a-uuid").status_code, 400)
+        self.assertEqual(self.report(target_type="user", target_id="alice").status_code, 400)
+        self.assertEqual(self.report(target_type="user", target_id="bob", reason="bad").status_code, 400)
+
+    def test_requires_sign_in(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.report(target_type="user", target_id="bob").status_code, 401)

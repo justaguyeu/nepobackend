@@ -107,3 +107,14 @@ def upload(path, data, content_type):
 
 def delete(path):
     _request("DELETE", path, headers=_headers())
+
+
+def delete_many(paths):
+    """Deletes several objects from the media bucket in one request."""
+    url = f"{settings.SUPABASE_URL.rstrip('/')}/storage/v1/object/{settings.SUPABASE_MEDIA_BUCKET}"
+    try:
+        res = httpx.request("DELETE", url, json={"prefixes": list(paths)}, headers=_headers(), timeout=TIMEOUT)
+    except httpx.HTTPError as exc:
+        raise StorageError(f"Couldn't reach Supabase Storage: {exc!r}") from exc
+    if res.status_code >= 300:
+        raise StorageError(f"Supabase Storage returned {res.status_code}: {res.text[:500]}")

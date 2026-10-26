@@ -182,3 +182,39 @@ class CorsTests(APITestCase):
         for origin in ["https://evil.example", "http://localhost.evil.example:8000"]:
             res = self.preflight(origin)
             self.assertNotIn("access-control-allow-origin", res.headers, origin)
+
+
+class DeleteAccountTests(APITestCase):
+    def setUp(self):
+        cache.clear()  # the endpoint uses the "auth" throttle
+        self.alice = User.objects.create_user(username="alice", password=STRONG_PASSWORD)
+        self.bob = User.objects.create_user(username="bob", password=STRONG_PASSWORD)
+        Post.objects.create(author=self.alice, caption="mine")
+        Follow.objects.create(follower=self.bob, following=self.alice)
+        self.client.force_authenticate(self.alice)
+
+    def test_wrong_password_keeps_the_account(self):
+        res = self.client.post("/api/users/me/delete/", {"password": "nope"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(User.objects.filter(username="alice").exists())
+
+    def test_deletes_account_and_everything_in_it(self):
+        res = self.client.post("/api/users/me/delete/", {"password": STRONG_PASSWORD}, format="json")
+        self.assertEqual(res.status_code, 204)
+        self.assertFalse(User.objects.filter(username="alice").exists())
+        self.assertFalse(Post.objects.filter(caption="mine").exists())
+        self.assertFalse(Follow.objects.filter(following__username="alice").exists())
+        self.assertTrue(User.objects.filter(username="bob").exists())
+
+    def test_only_the_users_own_uploads_are_removed(self):
+        from uploads import cleanup
+        from content.models import PostMedia
+        post = Post.objects.get(caption="mine")
+        base = "https://x.supabase.co/storage/v1/object/public/nepo-media"
+        PostMedia.objects.create(post=post, file_url=f"{base}/posts/{self.alice.id}/a.jpg")
+        PostMedia.objects.create(post=post, file_url=f"{base}/seed/dar.mp4", media_type="video", order=1)
+        PostMedia.objects.create(post=post, file_url=f"{base}/posts/{self.bob.id}/b.jpg", order=2)
+        self.alice.avatar_url = f"http://localhost:8000/media/avatars/{self.alice.id}/me.png"
+        self.alice.save()
+        self.assertEqual(cleanup.uploaded_paths(self.alice),
+                         [f"avatars/{self.alice.id}/me.png", f"posts/{self.alice.id}/a.jpg"])

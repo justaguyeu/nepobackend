@@ -81,3 +81,64 @@ class Message(models.Model):
 
     class Meta:
         ordering = ["created_at"]
+
+
+class Block(models.Model):
+    """
+    `blocker` and `blocked` stop seeing each other's posts, reels, stories,
+    comments and profile, can't follow or message each other, and any follow
+    between them is removed (see social/visibility.py).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    blocker = models.ForeignKey(User, related_name="blocking", on_delete=models.CASCADE)
+    blocked = models.ForeignKey(User, related_name="blocked_by", on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("blocker", "blocked")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.blocker} blocked {self.blocked}"
+
+
+class Report(models.Model):
+    """Something a user flagged for the Nepo team to review in the admin."""
+
+    SPAM, NUDITY, HARASSMENT, HATE, VIOLENCE, SCAM, FALSE_INFO, OTHER = (
+        "spam", "nudity", "harassment", "hate", "violence", "scam", "false_info", "other",
+    )
+    REASON_CHOICES = [
+        (SPAM, "Spam"), (NUDITY, "Nudity or sexual content"), (HARASSMENT, "Bullying or harassment"),
+        (HATE, "Hate speech"), (VIOLENCE, "Violence or dangerous acts"), (SCAM, "Scam or fraud"),
+        (FALSE_INFO, "False information"), (OTHER, "Something else"),
+    ]
+    OPEN, RESOLVED, DISMISSED = "open", "resolved", "dismissed"
+    STATUS_CHOICES = [(OPEN, "Open"), (RESOLVED, "Resolved (action taken)"), (DISMISSED, "Dismissed")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Kept if the reporter deletes their account: the content may still need action.
+    reporter = models.ForeignKey(User, null=True, related_name="reports_made", on_delete=models.SET_NULL)
+    # Whose account or content was reported (for content: its author).
+    reported_user = models.ForeignKey(User, related_name="reports_received", on_delete=models.CASCADE)
+    # The report outlives removed content, as a record of what was done.
+    post = models.ForeignKey("content.Post", null=True, blank=True, on_delete=models.SET_NULL)
+    comment = models.ForeignKey("content.Comment", null=True, blank=True, on_delete=models.SET_NULL)
+    reel = models.ForeignKey("content.Reel", null=True, blank=True, on_delete=models.SET_NULL)
+    reel_comment = models.ForeignKey("content.ReelComment", null=True, blank=True, on_delete=models.SET_NULL)
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    details = models.CharField(max_length=500, blank=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def target(self):
+        return self.post or self.comment or self.reel or self.reel_comment or self.reported_user
+
+    def __str__(self):
+        return f"{self.get_reason_display()} report on {self.target}"

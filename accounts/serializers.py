@@ -74,6 +74,15 @@ class ChangePasswordSerializer(serializers.Serializer):
         return attrs
 
 
+class DeleteAccountSerializer(serializers.Serializer):
+    password = serializers.CharField(required=True, style={"input_type": "password"})
+
+    def validate_password(self, value):
+        if not self.context["request"].user.check_password(value):
+            raise serializers.ValidationError("Wrong password.")
+        return value
+
+
 class UserSummarySerializer(serializers.ModelSerializer):
     """Compact user data — used inside posts, comments, follower lists, etc."""
 
@@ -101,6 +110,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     highlights = HighlightSerializer(many=True, read_only=True)
     is_following = serializers.SerializerMethodField()
     follow_status = serializers.SerializerMethodField()
+    is_blocked = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -108,7 +118,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "id", "username", "full_name", "bio", "avatar_url", "website",
             "phone_number", "is_private", "is_business", "is_verified",
             "followers_count", "following_count", "posts_count",
-            "highlights", "is_following", "follow_status", "created_at",
+            "highlights", "is_following", "follow_status", "is_blocked", "created_at",
         ]
         # Verification is granted by staff (admin), never self-assigned via PATCH /users/me/.
         read_only_fields = ["is_verified", "created_at"]
@@ -143,3 +153,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
         """"accepted", "pending" (request sent to a private account) or "none"."""
         follow = self._follow(obj)
         return follow.status if follow else "none"
+
+    def get_is_blocked(self, obj):
+        """True when the viewer has blocked this account (their content is hidden until unblocked)."""
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.blocked_by.filter(blocker=request.user).exists()

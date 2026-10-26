@@ -144,6 +144,7 @@ REST_FRAMEWORK = {
         "auth": "10/min",
         "token_refresh": "60/min",
         "uploads": "60/min",
+        "reports": "30/hour",
     },
 }
 
@@ -193,7 +194,7 @@ MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024
 
 # Bump when the Terms & Conditions text changes (frontend: src/lib/terms.ts).
-TERMS_VERSION = "2026-10-07"
+TERMS_VERSION = "2026-10-25"
 
 # --- Supabase (media storage) ---
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")

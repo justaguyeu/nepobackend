@@ -1,13 +1,14 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
-from rest_framework import permissions, status, viewsets
+from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Conversation, Follow, Message, Notification
 from .serializers import (
-    ConversationSerializer, FollowSerializer, MessageSerializer, NotificationSerializer,
+    ConversationSerializer, FollowSerializer, MessageSerializer, NotificationSerializer, ReportSerializer,
 )
+from .visibility import is_blocked_between, not_blocked_q
 
 User = get_user_model()
 
@@ -27,6 +28,8 @@ class FollowViewSet(viewsets.ViewSet):
         target = get_object_or_404(User, username=username)
         if target == request.user:
             return Response({"detail": "Cannot follow yourself"}, status=status.HTTP_400_BAD_REQUEST)
+        if is_blocked_between(request.user, target):
+            return Response({"detail": "You can't follow this account."}, status=status.HTTP_403_FORBIDDEN)
         follow, created = Follow.objects.get_or_create(follower=request.user, following=target)
         if not created:
             follow.delete()
@@ -72,7 +75,9 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Notification.objects.filter(recipient=self.request.user).select_related("actor")
+        return Notification.objects.filter(recipient=self.request.user).filter(
+            not_blocked_q(self.request.user, "actor")
+        ).select_related("actor")
 
     @action(detail=False, methods=["post"])
     def mark_read(self, request):
@@ -93,6 +98,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def messages(self, request, pk=None):
         convo = self.get_object()
         if request.method == "POST":
+            if not convo.is_group and any(
+                is_blocked_between(request.user, other) for other in convo.participants.exclude(pk=request.user.pk)
+            ):
+                return Response({"detail": "You can't message this account."}, status=status.HTTP_403_FORBIDDEN)
             serializer = MessageSerializer(data=request.data, context={"request": request})
             serializer.is_valid(raise_exception=True)
             message = serializer.save(sender=request.user, conversation=convo)
@@ -102,3 +111,20 @@ class ConversationViewSet(viewsets.ModelViewSet):
         for unread in messages.exclude(read_by=request.user):
             unread.read_by.add(request.user)
         return Response(MessageSerializer(messages, many=True).data)
+
+
+class ReportView(generics.CreateAPIView):
+    """POST /api/reports/ — flag a post, comment, reel, reel comment or account for the Nepo team."""
+
+    serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    throttle_scope = "reports"
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"detail": "Thanks for telling us. The Nepo team reviews every report within 24 hours."},
+            status=status.HTTP_201_CREATED,
+        )
